@@ -2,7 +2,14 @@ services:
   - type: web
     name: theater-bot
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      # Устанавливаем Chrome и Chromedriver
+      curl -o- https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb > chrome.deb
+      apt-get update
+      apt-get install -y ./chrome.deb --allow-downgrades
+      rm chrome.deb
+      # Устанавливаем зависимости Python
+      pip install -r requirements.txt
     startCommand: python bot.py
     restartPolicy: always
     environmentVariables:
@@ -16,3 +23,4 @@ services:
       timeout: 5s
       retries: 3
       initialDelay: 60s
+
