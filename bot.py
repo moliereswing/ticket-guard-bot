@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio
 
 # === НАСТРОЙКИ ===
-TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'  # ⚠️ Замените на свой токен
+TELEGRAM_TOKEN = '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0'
 THEATER_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
 
 # Настройка логирования
@@ -53,8 +53,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.effective_user.username or "Аноним"
     add_subscriber(chat_id, username)
     await update.message.reply_text(
-        "✅ Вы подписаны на уведомления!\n"
-        "Как только появятся билеты на любой спектакль — я сразу сообщу. 🎭\n"
+        "✅ Вы подписаны на мгновенные уведомления!\n"
+        "Как только появятся билеты — вы получите сообщение за секунды. 🚨\n"
         "Чтобы отписаться, отправьте /stop."
     )
 
@@ -72,12 +72,12 @@ async def broadcast_message(application, text):
     subscribers = get_all_subscribers()
     for chat_id in subscribers:
         try:
-            await application.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
-            logger.info(f"Сообщение отправлено: {chat_id}")
+            await application.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', disable_web_page_preview=False)
+            logger.info(f"✅ Уведомление доставлено: {chat_id}")
         except Exception as e:
-            logger.error(f"Ошибка отправки {chat_id}: {e}")
+            logger.error(f"❌ Ошибка отправки {chat_id}: {e}")
             if "Forbidden" in str(e):
-                # Удаляем пользователя, если он заблокировал бота
+                # Удаляем заблокировавших бота
                 conn = sqlite3.connect('subscribers.db')
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM subscribers WHERE chat_id = ?', (chat_id,))
@@ -94,62 +94,72 @@ async def check_new_events(application):
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-images")  # Отключаем изображения для скорости
+    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
     try:
-        logger.info("Проверка наличия билетов...")
+        logger.info("🚀 Запуск сверхбыстрой проверки билетов...")
         driver.get(THEATER_URL)
-        time.sleep(5)  # Ждём загрузки страницы
+        time.sleep(3)  # Минимальная задержка для прогрузки
 
-        # 🔍 Ищем ВСЕ оранжевые кнопки (активные сеансы)
-        # Селекторы подобраны под quicktickets.ru
+        # Находим все блоки мероприятий
         event_blocks = driver.find_elements(By.CSS_SELECTOR, "div.event")
-
-        new_events_found = False
 
         for block in event_blocks:
             try:
-                # Пытаемся найти оранжевую кнопку внутри блока
-                date_link = block.find_element(By.CSS_SELECTOR, "a.btn-orange, a.btn-primary")
-                event_time = date_link.text.strip()
+                # Ищем название спектакля (первый span.underline)
+                title_spans = block.find_elements(By.CSS_SELECTOR, "span.underline")
+                if len(title_spans) < 2:
+                    continue
 
-                # Пытаемся найти название спектакля
+                event_title = title_spans[0].text.strip()  # Первый — название
+                event_time = title_spans[1].text.strip()   # Второй — дата/время
+
+                # Ищем ссылку на сеанс (обёрнута вокруг даты/времени)
                 try:
-                    title_element = block.find_element(By.CSS_SELECTOR, "h3, .event-title, strong")
-                    event_title = title_element.text.strip()
+                    date_link = title_spans[1].find_element(By.XPATH, "./ancestor::a")
+                    event_url = date_link.get_attribute('href')
                 except:
-                    event_title = "Спектакль"
+                    continue
 
-                # Формируем сообщение
-                message = f"🎉 <b>Появились билеты!</b>\n\n🎭 {event_title}\n⏰ {event_time}\n🔗 {THEATER_URL}"
+                # Проверяем наличие текста "(мест нет)"
+                no_seats_elements = block.find_elements(By.CSS_SELECTOR, "span[style*='color:#888888']")
 
-                # Отправляем ВСЕМ подписчикам
-                await broadcast_message(application, message)
-                new_events_found = True
-                logger.info(f"Обнаружен новый сеанс: {event_title} в {event_time}")
+                # ✅ Если "(мест нет)" НЕТ — значит, билеты есть!
+                if not no_seats_elements:
+                    message = (
+                        f"🚨 <b>СРОЧНО! БИЛЕТЫ ПОЯВИЛИСЬ!</b>\n\n"
+                        f"🎭 <b>{event_title}</b>\n"
+                        f"⏰ {event_time}\n"
+                        f"🔗 <a href='{event_url}'>БЫСТРО ВЫБРАТЬ!</a>"
+                    )
+                    await broadcast_message(application, message)
+                    logger.info(f"🎉 Билеты найдены: {event_title} — {event_time}")
 
-            except Exception:
-                # Если внутри блока нет оранжевой кнопки — пропускаем его (билетов нет)
+            except Exception as e:
+                logger.error(f"Ошибка обработки блока: {e}")
                 continue
 
-        if not new_events_found:
-            logger.info("Новых сеансов с билетами не обнаружено.")
-
     except Exception as e:
-        logger.error(f"Ошибка при проверке: {e}")
+        logger.error(f"Критическая ошибка при проверке: {e}")
     finally:
         driver.quit()
 
-# === Бесконечный цикл мониторинга ===
+# === Сверхбыстрый цикл мониторинга ===
 async def monitoring_loop(application):
     while True:
+        start_time = time.time()
         try:
             await check_new_events(application)
         except Exception as e:
             logger.error(f"Ошибка в цикле: {e}")
-        logger.info("Следующая проверка через 5 минут...")
-        await asyncio.sleep(300)  # 5 минут
+        elapsed = time.time() - start_time
+        sleep_time = max(10 - elapsed, 1)  # Минимум 1 секунда, максимум 10
+        logger.info(f"⏱️ Следующая проверка через {int(sleep_time)} сек...")
+        await asyncio.sleep(sleep_time)
 
 # === Запуск бота ===
 async def main():
@@ -163,7 +173,7 @@ async def main():
     await application.start()
     await application.updater.start_polling()
 
-    logger.info("Бот запущен и ожидает команд...")
+    logger.info("🔥 Бот запущен. Мониторинг каждые 10 секунд!")
     await monitoring_loop(application)
 
 if __name__ == "__main__":
