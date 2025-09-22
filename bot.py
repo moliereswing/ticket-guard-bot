@@ -1,13 +1,14 @@
 import time
-import asyncio
 import os
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram.ext import Updater, CommandHandler
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 
 # === НАСТРОЙКИ ===
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0')
@@ -66,7 +67,9 @@ def check_events():
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
+        options.add_argument('--remote-debugging-port=9222')
 
+        # ✅ Правильный импорт и использование Service
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         MAIN_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
@@ -87,23 +90,37 @@ def check_events():
                 # Переходим на страницу мероприятия
                 driver.get(event_url)
 
-                # Ждём, пока загрузится список дат
+                # Ждём загрузки дат
                 wait = WebDriverWait(driver, 10)
-                dates = wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'date')))
+                date_items = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, '.date')))
 
-                # Проверяем каждую дату
-                for date in dates:
+                for date_item in date_items:
                     try:
-                        # Ищем ссылку на дату с текстом "Купите билеты"
-                        buy_link = date.find_element(By.XPATH, ".//a[contains(text(), 'Купить билеты')]")
-                        booking_url = buy_link.get_attribute('href')
-                        if not booking_url.startswith('http'):
-                            booking_url = 'https://quicktickets.ru' + booking_url
+                        # Ищем элемент с датой и временем
+                        date_text_elem = date_item.find_element(By.CSS_SELECTOR, '.date__text')
+                        date_text = date_text_elem.text.strip()
 
-                        event_id = f"{title}|{booking_url}"
-                        if event_id not in notified_events:
-                            driver.quit()
-                            return title, booking_url
+                        # Проверяем цвет текста — если не серый, значит билеты есть
+                        # Серый текст: color: #888 или opacity: 0.5 — зависит от сайта
+                        style = date_text_elem.get_attribute('style') or ''
+                        computed_color = driver.execute_script(
+                            "return window.getComputedStyle(arguments[0]).color;", date_text_elem
+                        )
+
+                        # Если текст не серый — билеты есть
+                        if 'rgb(136, 136, 136)' not in computed_color and 'opacity: 0.5' not in style:
+                            print(f"🎉 Найдены билеты: {title} — {date_text}")
+
+                            # Получаем ссылку на бронирование
+                            booking_link = date_item.find_element(By.TAG_NAME, 'a')
+                            booking_url = booking_link.get_attribute('href')
+                            if not booking_url.startswith('http'):
+                                booking_url = 'https://quicktickets.ru' + booking_url
+
+                            event_id = f"{title}|{booking_url}"
+                            if event_id not in notified_events:
+                                driver.quit()
+                                return title, booking_url
 
                     except Exception as e:
                         continue
@@ -131,7 +148,7 @@ def monitor_tickets(updater):
         print("💤 Сплю 30 секунд...")
         time.sleep(30)
 
-# 🌐 Фиктивный веб-сервер для Render
+# 🌐 Фиктивный веб-сервер для Render (чтобы не было ошибки "No open ports")
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -160,4 +177,3 @@ if __name__ == '__main__':
     print("🤖 Telegram-бот запущен. Жду команды /start...")
     updater.start_polling()
     updater.idle()
-
