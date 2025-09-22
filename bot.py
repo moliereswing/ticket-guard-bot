@@ -6,8 +6,8 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 # === НАСТРОЙКИ ===
-TELEGRAM_TOKEN = '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0'
-CHAT_ID = '8286251093'
+TELEGRAM_TOKEN = 'ВАШ_ТОКЕН_СЮДА'
+CHAT_ID = 'ВАШ_CHAT_ID_СЮДА'
 
 MAIN_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
 HEADERS = {
@@ -27,7 +27,7 @@ async def send_alert(bot, event_name, booking_url):
         await bot.send_message(
             chat_id=CHAT_ID,
             text=message,
-            parse_mode='Markdown',
+            parse_mode='Markdown',  # ← ЗАМЕНИЛИ ParseMode.MARKDOWN на строку 'Markdown'
             disable_web_page_preview=False
         )
         print(f"✅ Отправлено: {event_name}")
@@ -72,7 +72,7 @@ def check_events():
             event_id = f"{title}|{booking_url}"
 
             if event_id not in notified_events:
-                return title, booking_url  # Возвращаем для асинхронной отправки
+                return title, booking_url
 
         return None, None
 
@@ -95,4 +95,3 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-
