@@ -6,12 +6,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext  # ← Используем Updater!
+from telegram import Bot
+from telegram.ext import Updater, CommandHandler, CallbackContext
 import threading
 
 # === НАСТРОЙКИ ===
-TELEGRAM_TOKEN = '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0'  # ⚠️ Замените на свой токен
+TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'  # ⚠️ Замените на свой токен
 THEATER_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
 
 # Настройка логирования
@@ -48,7 +48,7 @@ def get_all_subscribers():
     return subscribers
 
 # === Команды Telegram-бота ===
-def start_command(update: Update, context: CallbackContext):
+def start_command(update, context):
     chat_id = update.effective_chat.id
     username = update.effective_user.username or "Аноним"
     add_subscriber(chat_id, username)
@@ -58,7 +58,7 @@ def start_command(update: Update, context: CallbackContext):
         "Чтобы отписаться, отправьте /stop."
     )
 
-def stop_command(update: Update, context: CallbackContext):
+def stop_command(update, context):
     chat_id = update.effective_chat.id
     conn = sqlite3.connect('subscribers.db')
     cursor = conn.cursor()
@@ -68,16 +68,15 @@ def stop_command(update: Update, context: CallbackContext):
     update.message.reply_text("❌ Вы отписались от уведомлений.")
 
 # === Отправка сообщения всем подписчикам ===
-def broadcast_message(updater, text):
+def broadcast_message(bot_instance, text):
     subscribers = get_all_subscribers()
     for chat_id in subscribers:
         try:
-            updater.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', disable_web_page_preview=False)
+            bot_instance.send_message(chat_id=chat_id, text=text, parse_mode='HTML', disable_web_page_preview=False)
             logger.info(f"✅ Уведомление доставлено: {chat_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка отправки {chat_id}: {e}")
             if "Forbidden" in str(e):
-                # Удаляем заблокировавших бота
                 conn = sqlite3.connect('subscribers.db')
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM subscribers WHERE chat_id = ?', (chat_id,))
@@ -85,8 +84,7 @@ def broadcast_message(updater, text):
                 conn.close()
 
 # === Основная функция проверки билетов ===
-def check_new_events(updater):
-    # Настройка Selenium в фоновом режиме
+def check_new_events(bot_instance):
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
@@ -104,30 +102,25 @@ def check_new_events(updater):
         driver.get(THEATER_URL)
         time.sleep(3)
 
-        # Находим все блоки мероприятий
         event_blocks = driver.find_elements(By.CSS_SELECTOR, "div.event")
 
         for block in event_blocks:
             try:
-                # Ищем название спектакля (первый span.underline)
                 title_spans = block.find_elements(By.CSS_SELECTOR, "span.underline")
                 if len(title_spans) < 2:
                     continue
 
-                event_title = title_spans[0].text.strip()  # Первый — название
-                event_time = title_spans[1].text.strip()   # Второй — дата/время
+                event_title = title_spans[0].text.strip()
+                event_time = title_spans[1].text.strip()
 
-                # Ищем ссылку на сеанс (обёрнута вокруг даты/времени)
                 try:
                     date_link = title_spans[1].find_element(By.XPATH, "./ancestor::a")
                     event_url = date_link.get_attribute('href')
                 except:
                     continue
 
-                # Проверяем наличие текста "(мест нет)"
                 no_seats_elements = block.find_elements(By.CSS_SELECTOR, "span[style*='color:#888888']")
 
-                # ✅ Если "(мест нет)" НЕТ — значит, билеты есть!
                 if not no_seats_elements:
                     message = (
                         f"🚨 <b>СРОЧНО! БИЛЕТЫ ПОЯВИЛИСЬ!</b>\n\n"
@@ -135,7 +128,7 @@ def check_new_events(updater):
                         f"⏰ {event_time}\n"
                         f"🔗 <a href='{event_url}'>БЫСТРО ВЫБРАТЬ!</a>"
                     )
-                    broadcast_message(updater, message)
+                    broadcast_message(bot_instance, message)
                     logger.info(f"🎉 Билеты найдены: {event_title} — {event_time}")
 
             except Exception as e:
@@ -148,11 +141,11 @@ def check_new_events(updater):
         driver.quit()
 
 # === Сверхбыстрый цикл мониторинга ===
-def monitoring_loop(updater):
+def monitoring_loop(bot_instance):
     while True:
         start_time = time.time()
         try:
-            check_new_events(updater)
+            check_new_events(bot_instance)
         except Exception as e:
             logger.error(f"Ошибка в цикле: {e}")
         elapsed = time.time() - start_time
@@ -163,20 +156,22 @@ def monitoring_loop(updater):
 # === Запуск бота ===
 def main():
     init_db()
-    updater = Updater(token=TELEGRAM_TOKEN, use_context=True)
+    
+    # Создаём экземпляр Bot и передаём его в Updater
+    bot_instance = Bot(token=TELEGRAM_TOKEN)
+    updater = Updater(bot=bot_instance, use_context=True)
 
     dispatcher = updater.dispatcher
     dispatcher.add_handler(CommandHandler("start", start_command))
     dispatcher.add_handler(CommandHandler("stop", stop_command))
 
     # Запускаем мониторинг в отдельном потоке
-    monitor_thread = threading.Thread(target=monitoring_loop, args=(updater,), daemon=True)
+    monitor_thread = threading.Thread(target=monitoring_loop, args=(bot_instance,), daemon=True)
     monitor_thread.start()
 
     logger.info("🔥 Бот запущен. Мониторинг каждые 10 секунд!")
     updater.start_polling()
-    updater.idle()  # Ждём команд
+    updater.idle()
 
 if __name__ == "__main__":
     main()
-
