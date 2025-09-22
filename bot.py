@@ -1,13 +1,9 @@
-import asyncio
 import time
-import requests
-from bs4 import BeautifulSoup
-from telegram import Bot
-from telegram.ext import Application, CommandHandler
-from telegram.error import TelegramError
+import asyncio
 import os
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from telegram.ext import Updater, CommandHandler
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -23,7 +19,7 @@ if not os.path.exists(SUBSCRIBERS_FILE):
 
 notified_events = set()
 
-async def send_alert_to_all(bot, event_name, booking_url):
+def send_alert_to_all(bot, event_name, booking_url):
     message = (
         f"🎫 *ПОЯВИЛИСЬ БИЛЕТЫ!* \n\n"
         f"🎭 *Спектакль:* {event_name}\n"
@@ -37,7 +33,7 @@ async def send_alert_to_all(bot, event_name, booking_url):
 
     for chat_id in chat_ids:
         try:
-            await bot.send_message(
+            bot.send_message(
                 chat_id=int(chat_id),
                 text=message,
                 parse_mode='Markdown',
@@ -47,11 +43,10 @@ async def send_alert_to_all(bot, event_name, booking_url):
         except Exception as e:
             print(f"❌ Ошибка при отправке {chat_id}: {e}")
 
-async def start(update, context):
+def start(update, context):
     chat_id = str(update.message.chat_id)
     user_name = update.message.from_user.first_name
 
-    # Читаем существующих подписчиков
     with open(SUBSCRIBERS_FILE, 'r', encoding='utf-8') as f:
         subscribers = set(line.strip() for line in f)
 
@@ -59,10 +54,10 @@ async def start(update, context):
         subscribers.add(chat_id)
         with open(SUBSCRIBERS_FILE, 'w', encoding='utf-8') as f:
             f.write('\n'.join(subscribers))
-        await update.message.reply_text("✅ Ты подписан(а) на уведомления о билетах!")
+        update.message.reply_text("✅ Ты подписан(а) на уведомления о билетах!")
         print(f"📩 Новый подписчик: {user_name} ({chat_id})")
     else:
-        await update.message.reply_text("Ты уже подписан(а) на уведомления.")
+        update.message.reply_text("Ты уже подписан(а) на уведомления.")
 
 def check_events():
     try:
@@ -118,18 +113,18 @@ def check_events():
         print(f"❌ Ошибка при проверке: {e}")
         return None, None
 
-async def main_bot():
-    bot = Bot(token=TELEGRAM_TOKEN)
+def monitor_tickets(updater):
+    bot = updater.bot
     print("🚀 Бот запущен. Мониторим билеты...")
 
     while True:
         title, booking_url = check_events()
         if title and booking_url:
-            await send_alert_to_all(bot, title, booking_url)
+            send_alert_to_all(bot, title, booking_url)
             notified_events.add(f"{title}|{booking_url}")
 
         print("💤 Сплю 30 секунд...")
-        await asyncio.sleep(30)
+        time.sleep(30)
 
 # 🌐 Фиктивный веб-сервер для Render
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -146,15 +141,17 @@ def run_health_server():
 
 if __name__ == '__main__':
     # Создаём Telegram-бота
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
+    updater = Updater(TELEGRAM_TOKEN, use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("start", start))
 
     # Запускаем веб-сервер в фоновом потоке
     Thread(target=run_health_server, daemon=True).start()
 
-    # Запускаем основной цикл мониторинга билетов в фоновом потоке
-    Thread(target=lambda: asyncio.run(main_bot()), daemon=True).start()
+    # Запускаем мониторинг билетов в фоновом потоке
+    Thread(target=monitor_tickets, args=(updater,), daemon=True).start()
 
-    # Запускаем Telegram-бота (это основной цикл)
+    # Запускаем Telegram-бота
     print("🤖 Telegram-бот запущен. Жду команды /start...")
-    app.run_polling()
+    updater.start_polling()
+    updater.idle()
