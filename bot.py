@@ -39,56 +39,73 @@ async def send_alert(bot, event_name, booking_url):
     except Exception as e:
         print(f"❌ Неизвестная ошибка: {e}")
 
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+
 def check_events():
     try:
-        response = requests.get(MAIN_URL, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(response.text, 'lxml')
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')  # работает без окна
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
 
-        events = soup.select('.event-item')
+        driver = webdriver.Chrome(options=options)
+        driver.get(MAIN_URL)
+
+        # Ищем все спектакли
+        events = driver.find_elements(By.CSS_SELECTOR, '.event-item')
 
         for event in events:
-            title_elem = event.select_one('.event-title, h3, .title a')
-            if not title_elem:
-                continue
-            title = title_elem.get_text(strip=True)
+            title_elem = event.find_element(By.CSS_SELECTOR, '.event-title, h3, .title a')
+            title = title_elem.text.strip()
 
-            link_elem = event.select_one('a[href*="/event/"]')
-            if not link_elem or not link_elem.get('href'):
-                continue
+            link_elem = event.find_element(By.TAG_NAME, 'a')
+            event_url = link_elem.get_attribute('href')
 
-            event_url = link_elem['href']
             if not event_url.startswith('http'):
                 event_url = 'https://quicktickets.ru' + event_url
 
-            # Добавим задержку, чтобы страница загрузилась полностью
-            time.sleep(2)
+            # Переходим на страницу мероприятия
+            driver.get(event_url)
 
-            event_page = requests.get(event_url, headers=HEADERS, timeout=10)
-            event_soup = BeautifulSoup(event_page.text, 'lxml')
-
-            # Ищем кнопку "Купить" по тексту
-            buy_button = event_soup.find('button', string='Купить') or \
-                         event_soup.find('button', string='КУПИТЬ') or \
-                         event_soup.find('button', class_='button')
-
-            if not buy_button:
+            # Ждём, пока загрузится план зала
+            try:
+                wait = WebDriverWait(driver, 10)
+                seat_map = wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'seat-map')))
+            except:
                 continue
 
-            booking_url = buy_button['href'] if buy_button.name == 'a' else event_url
-            if not booking_url.startswith('http'):
-                booking_url = 'https://quicktickets.ru' + booking_url
+            # Находим свободное место (например, с классом "available")
+            available_seat = driver.find_element(By.CSS_SELECTOR, '.seat.available')
+            if not available_seat:
+                continue
 
-            event_id = f"{title}|{booking_url}"
+            # Нажимаем на свободное место
+            available_seat.click()
 
-            if event_id not in notified_events:
-                return title, booking_url
+            # Ждём, пока появится кнопка "Купить"
+            try:
+                buy_button = wait.until(EC.presence_of_element_located((By.XPATH, '//button[contains(text(), "Купить")]')))
+                booking_url = buy_button.get_attribute('href') or event_url
+                if not booking_url.startswith('http'):
+                    booking_url = 'https://quicktickets.ru' + booking_url
 
+                event_id = f"{title}|{booking_url}"
+                if event_id not in notified_events:
+                    return title, booking_url
+            except:
+                continue
+
+        driver.quit()
         return None, None
 
     except Exception as e:
         print(f"❌ Ошибка при проверке: {e}")
         return None, None
-
+        
 async def main_bot():
     bot = Bot(token=TELEGRAM_TOKEN)
     
@@ -127,4 +144,5 @@ if __name__ == '__main__':
     Thread(target=run_health_server, daemon=True).start()
     # Запускаем основной бот
     asyncio.run(main_bot())
+
 
