@@ -139,15 +139,19 @@ def run_health_server():
     server.serve_forever()
 
 if __name__ == '__main__':
-    # Запускаем Telegram-бота для приёма команд
+    # Создаём Telegram-бота
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
 
-    # Запускаем веб-сервер в фоне
+    # Запускаем веб-сервер в фоновом потоке
     Thread(target=run_health_server, daemon=True).start()
 
-    # Запускаем основной цикл бота
-    asyncio.get_event_loop().run_until_complete(asyncio.gather(
-        app.run_polling(),
+    # Запускаем основной цикл мониторинга билетов в фоновом потоке
+    Thread(target=lambda: asyncio.run(main_bot()), daemon=True).start()
+
+    # Запускаем Telegram-бота (это основной цикл)
+    print("🤖 Telegram-бот запущен. Жду команды /start...")
+    app.run_polling()
         main_bot()
     ))
+
