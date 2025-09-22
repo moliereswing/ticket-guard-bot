@@ -7,11 +7,11 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-import asyncio
+from telegram.ext import Updater, CommandHandler, CallbackContext  # ← Используем Updater!
+import threading
 
 # === НАСТРОЙКИ ===
-TELEGRAM_TOKEN = '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0'
+TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'  # ⚠️ Замените на свой токен
 THEATER_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
 
 # Настройка логирования
@@ -48,31 +48,31 @@ def get_all_subscribers():
     return subscribers
 
 # === Команды Telegram-бота ===
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start_command(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     username = update.effective_user.username or "Аноним"
     add_subscriber(chat_id, username)
-    await update.message.reply_text(
+    update.message.reply_text(
         "✅ Вы подписаны на мгновенные уведомления!\n"
         "Как только появятся билеты — вы получите сообщение за секунды. 🚨\n"
         "Чтобы отписаться, отправьте /stop."
     )
 
-async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def stop_command(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     conn = sqlite3.connect('subscribers.db')
     cursor = conn.cursor()
     cursor.execute('DELETE FROM subscribers WHERE chat_id = ?', (chat_id,))
     conn.commit()
     conn.close()
-    await update.message.reply_text("❌ Вы отписались от уведомлений.")
+    update.message.reply_text("❌ Вы отписались от уведомлений.")
 
 # === Отправка сообщения всем подписчикам ===
-async def broadcast_message(application, text):
+def broadcast_message(updater, text):
     subscribers = get_all_subscribers()
     for chat_id in subscribers:
         try:
-            await application.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', disable_web_page_preview=False)
+            updater.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML', disable_web_page_preview=False)
             logger.info(f"✅ Уведомление доставлено: {chat_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка отправки {chat_id}: {e}")
@@ -85,7 +85,7 @@ async def broadcast_message(application, text):
                 conn.close()
 
 # === Основная функция проверки билетов ===
-async def check_new_events(application):
+def check_new_events(updater):
     # Настройка Selenium в фоновом режиме
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -95,15 +95,14 @@ async def check_new_events(application):
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-images")  # Отключаем изображения для скорости
-    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+    chrome_options.add_argument("--disable-images")
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
     try:
         logger.info("🚀 Запуск сверхбыстрой проверки билетов...")
         driver.get(THEATER_URL)
-        time.sleep(3)  # Минимальная задержка для прогрузки
+        time.sleep(3)
 
         # Находим все блоки мероприятий
         event_blocks = driver.find_elements(By.CSS_SELECTOR, "div.event")
@@ -136,7 +135,7 @@ async def check_new_events(application):
                         f"⏰ {event_time}\n"
                         f"🔗 <a href='{event_url}'>БЫСТРО ВЫБРАТЬ!</a>"
                     )
-                    await broadcast_message(application, message)
+                    broadcast_message(updater, message)
                     logger.info(f"🎉 Билеты найдены: {event_title} — {event_time}")
 
             except Exception as e:
@@ -149,34 +148,34 @@ async def check_new_events(application):
         driver.quit()
 
 # === Сверхбыстрый цикл мониторинга ===
-async def monitoring_loop(application):
+def monitoring_loop(updater):
     while True:
         start_time = time.time()
         try:
-            await check_new_events(application)
+            check_new_events(updater)
         except Exception as e:
             logger.error(f"Ошибка в цикле: {e}")
         elapsed = time.time() - start_time
-        sleep_time = max(10 - elapsed, 1)  # Минимум 1 секунда, максимум 10
+        sleep_time = max(10 - elapsed, 1)
         logger.info(f"⏱️ Следующая проверка через {int(sleep_time)} сек...")
-        await asyncio.sleep(sleep_time)
+        time.sleep(sleep_time)
 
 # === Запуск бота ===
-async def main():
+def main():
     init_db()
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    updater = Updater(token=TELEGRAM_TOKEN, use_context=True)
 
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("stop", stop_command))
+    dispatcher = updater.dispatcher
+    dispatcher.add_handler(CommandHandler("start", start_command))
+    dispatcher.add_handler(CommandHandler("stop", stop_command))
 
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
+    # Запускаем мониторинг в отдельном потоке
+    monitor_thread = threading.Thread(target=monitoring_loop, args=(updater,), daemon=True)
+    monitor_thread.start()
 
     logger.info("🔥 Бот запущен. Мониторинг каждые 10 секунд!")
-    await monitoring_loop(application)
-    
+    updater.start_polling()
+    updater.idle()  # Ждём команд
+
 if __name__ == "__main__":
-    asyncio.run(main())
-
-
+    main()
