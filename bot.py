@@ -65,8 +65,10 @@ def check_events():
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
 
-        driver = webdriver.Chrome(options=options)
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
         MAIN_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
         driver.get(MAIN_URL)
 
@@ -82,26 +84,29 @@ def check_events():
                 if not event_url.startswith('http'):
                     event_url = 'https://quicktickets.ru' + event_url
 
+                # Переходим на страницу мероприятия
                 driver.get(event_url)
 
+                # Ждём, пока загрузится список дат
                 wait = WebDriverWait(driver, 10)
-                seat_map = wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'seat-map')))
+                dates = wait.until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'date')))
 
-                available_seat = driver.find_element(By.CSS_SELECTOR, '.seat.available')
-                if not available_seat:
-                    continue
+                # Проверяем каждую дату
+                for date in dates:
+                    try:
+                        # Ищем ссылку на дату с текстом "Купите билеты"
+                        buy_link = date.find_element(By.XPATH, ".//a[contains(text(), 'Купить билеты')]")
+                        booking_url = buy_link.get_attribute('href')
+                        if not booking_url.startswith('http'):
+                            booking_url = 'https://quicktickets.ru' + booking_url
 
-                available_seat.click()
+                        event_id = f"{title}|{booking_url}"
+                        if event_id not in notified_events:
+                            driver.quit()
+                            return title, booking_url
 
-                buy_button = wait.until(EC.presence_of_element_located((By.XPATH, '//button[contains(text(), "Купить")]')))
-                booking_url = buy_button.get_attribute('href') or event_url
-                if not booking_url.startswith('http'):
-                    booking_url = 'https://quicktickets.ru' + booking_url
-
-                event_id = f"{title}|{booking_url}"
-                if event_id not in notified_events:
-                    driver.quit()
-                    return title, booking_url
+                    except Exception as e:
+                        continue
 
             except Exception as e:
                 continue
@@ -155,3 +160,4 @@ if __name__ == '__main__':
     print("🤖 Telegram-бот запущен. Жду команды /start...")
     updater.start_polling()
     updater.idle()
+
