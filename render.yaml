@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: theater-bot
+    name: ticket-guard-bot
     env: python
     buildCommand: |
       # Устанавливаем Chrome и Chromedriver
@@ -23,4 +23,5 @@ services:
       timeout: 5s
       retries: 3
       initialDelay: 60s
+
 
