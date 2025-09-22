@@ -6,8 +6,8 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 # === НАСТРОЙКИ ===
-TELEGRAM_TOKEN = 'ВАШ_ТОКЕН_СЮДА'
-CHAT_ID = 'ВАШ_CHAT_ID_СЮДА'
+TELEGRAM_TOKEN = '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0'
+CHAT_ID = '8286251093'
 
 MAIN_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
 HEADERS = {
@@ -95,3 +95,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+
