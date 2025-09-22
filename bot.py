@@ -176,19 +176,7 @@ async def main():
     logger.info("🔥 Бот запущен. Мониторинг каждые 10 секунд!")
     await monitoring_loop(application)
     
-# 🌐 Фиктивный веб-сервер для Render (чтобы не было ошибки "No open ports")
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-def run_health_server():
-    port = int(os.environ.get('PORT', 10000))
-    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    print(f"🌐 Health server running on port {port}")
-    server.serve_forever()
-
 if __name__ == "__main__":
     asyncio.run(main())
+
 
