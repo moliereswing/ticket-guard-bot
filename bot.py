@@ -4,10 +4,13 @@ import requests
 from bs4 import BeautifulSoup
 from telegram import Bot
 from telegram.error import TelegramError
+import os
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # === НАСТРОЙКИ ===
-TELEGRAM_TOKEN = 'ВАШ_ТОКЕН_СЮДА'
-CHAT_ID = 'ВАШ_CHAT_ID_СЮДА'
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0')
+CHAT_ID = os.getenv('CHAT_ID', '8286251093')
 
 MAIN_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
 HEADERS = {
@@ -27,7 +30,7 @@ async def send_alert(bot, event_name, booking_url):
         await bot.send_message(
             chat_id=CHAT_ID,
             text=message,
-            parse_mode='Markdown',  # ← ЗАМЕНИЛИ ParseMode.MARKDOWN на строку 'Markdown'
+            parse_mode='Markdown',
             disable_web_page_preview=False
         )
         print(f"✅ Отправлено: {event_name}")
@@ -57,7 +60,6 @@ def check_events():
             if not event_url.startswith('http'):
                 event_url = 'https://quicktickets.ru' + event_url
 
-            # Переходим на страницу мероприятия
             event_page = requests.get(event_url, headers=HEADERS, timeout=10)
             event_soup = BeautifulSoup(event_page.text, 'lxml')
 
@@ -80,7 +82,7 @@ def check_events():
         print(f"❌ Ошибка при проверке: {e}")
         return None, None
 
-async def main():
+async def main_bot():
     bot = Bot(token=TELEGRAM_TOKEN)
     print("🚀 Бот запущен. Мониторим билеты...")
 
@@ -93,5 +95,21 @@ async def main():
         print("💤 Сплю 30 секунд...")
         await asyncio.sleep(30)
 
+# 🌐 Фиктивный веб-сервер для Render (чтобы не было ошибки "No open ports")
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def run_health_server():
+    port = int(os.environ.get('PORT', 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"🌐 Health server running on port {port}")
+    server.serve_forever()
+
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Запускаем веб-сервер в фоновом потоке
+    Thread(target=run_health_server, daemon=True).start()
+    # Запускаем основной бот
+    asyncio.run(main_bot())
