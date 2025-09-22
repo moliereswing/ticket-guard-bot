@@ -60,10 +60,17 @@ def check_events():
             if not event_url.startswith('http'):
                 event_url = 'https://quicktickets.ru' + event_url
 
+            # Добавим задержку, чтобы страница загрузилась полностью
+            time.sleep(2)
+
             event_page = requests.get(event_url, headers=HEADERS, timeout=10)
             event_soup = BeautifulSoup(event_page.text, 'lxml')
 
-            buy_button = event_soup.select_one('.buy-btn, .btn-buy, a[href*="/booking/"]')
+            # Ищем кнопку "Купить" по тексту
+            buy_button = event_soup.find('button', string='Купить') or \
+                         event_soup.find('button', string='КУПИТЬ') or \
+                         event_soup.find('button', class_='button')
+
             if not buy_button:
                 continue
 
@@ -84,8 +91,15 @@ def check_events():
 
 async def main_bot():
     bot = Bot(token=TELEGRAM_TOKEN)
-    print("🚀 Бот запущен. Мониторим билеты...")
+    
+    # Тестовое сообщение
+    try:
+        await bot.send_message(chat_id=CHAT_ID, text="✅ Бот успешно запущен и мониторит билеты!")
+        print("📩 Тестовое сообщение отправлено")
+    except Exception as e:
+        print(f"❌ Не удалось отправить тестовое сообщение: {e}")
 
+    print("🚀 Бот запущен. Мониторим билеты...")
     while True:
         title, booking_url = check_events()
         if title and booking_url:
@@ -113,3 +127,4 @@ if __name__ == '__main__':
     Thread(target=run_health_server, daemon=True).start()
     # Запускаем основной бот
     asyncio.run(main_bot())
+
