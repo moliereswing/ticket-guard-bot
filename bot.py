@@ -1,10 +1,13 @@
 import asyncio
 import time
+import requests
+from bs4 import BeautifulSoup
+from telegram import Bot
+from telegram.ext import Application, CommandHandler
+from telegram.error import TelegramError
 import os
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from telegram import Bot
-from telegram.ext import Application, CommandHandler
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -90,6 +93,9 @@ def check_events():
                 seat_map = wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'seat-map')))
 
                 available_seat = driver.find_element(By.CSS_SELECTOR, '.seat.available')
+                if not available_seat:
+                    continue
+
                 available_seat.click()
 
                 buy_button = wait.until(EC.presence_of_element_located((By.XPATH, '//button[contains(text(), "Купить")]')))
@@ -114,19 +120,12 @@ def check_events():
 
 async def main_bot():
     bot = Bot(token=TELEGRAM_TOKEN)
-
-    # Тестовое сообщение
-    try:
-        await bot.send_message(chat_id=CHAT_ID, text="✅ Бот успешно запущен и мониторит билеты!")
-        print("📩 Тестовое сообщение отправлено")
-    except Exception as e:
-        print(f"❌ Не удалось отправить тестовое сообщение: {e}")
-
     print("🚀 Бот запущен. Мониторим билеты...")
+
     while True:
         title, booking_url = check_events()
         if title and booking_url:
-            await send_alert(bot, title, booking_url)
+            await send_alert_to_all(bot, title, booking_url)
             notified_events.add(f"{title}|{booking_url}")
 
         print("💤 Сплю 30 секунд...")
@@ -159,7 +158,3 @@ if __name__ == '__main__':
     # Запускаем Telegram-бота (это основной цикл)
     print("🤖 Telegram-бот запущен. Жду команды /start...")
     app.run_polling()
-        main_bot()
-    ))
-
-
