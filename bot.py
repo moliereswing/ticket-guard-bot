@@ -11,7 +11,7 @@ from telegram.ext import Updater, CommandHandler, CallbackContext  # ← Исп�
 import threading
 
 # === НАСТРОЙКИ ===
-TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'  # ⚠️ Замените на свой токен
+TELEGRAM_TOKEN = '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0'  # ⚠️ Замените на свой токен
 THEATER_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
 
 # Настройка логирования
@@ -179,3 +179,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
