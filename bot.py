@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from telegram import Bot, ParseMode
 
 # === НАСТРОЙКИ ===
-TELEGRAM_TOKEN = 'AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0'
+TELEGRAM_TOKEN = '8286251093:AAHmfYAWQFZksTFvmKY29wG_xMTCapFmau0'
 CHAT_ID = '8286251093'
 
 MAIN_URL = 'https://quicktickets.ru/orel-teatr-svobodnoe-prostranstvo'
@@ -88,4 +88,5 @@ if __name__ == '__main__':
     while True:
         check_events()
         print("💤 Сплю 30 секунд...")
+
         time.sleep(30)
